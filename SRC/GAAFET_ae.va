@@ -1,0 +1,308 @@
+// -------------------------------------------------------- 
+// -------------------------------------------------------- 
+// -------------------------------------------------------- 
+// --------------- GAA-FET charge core model --------------
+// --------------------------------------------------------
+// --------------------------------------------------------
+// --------------------------------------------------------	
+
+ 
+`include "constants.vams"
+`include "disciplines.vams"    
+`include "common_def.include"
+
+module IH_GAAFET (d, g, s, b);	
+
+	inout d, g, s, b;
+	electrical d, g, s, b;
+	
+	// Type
+	parameter real TYPE = `ntype;
+	parameter integer DEVTYPE = `ntype from [0:1]; // MOSFET type 
+ 
+	// instance & model parameter
+	parameter real 		metal = 4.30 from [0:inf); // Gate workfunction
+	parameter real 		aff0 = 4.05 from [0:inf); // Electron affinity of substrate
+	parameter real 		NC0 = 2.5094E+25 from [0:inf); // electron concentration in conduction band 
+	parameter real 		ml = 0.9163 from [0:inf);
+	
+	// material default constant
+	parameter real 		epsrsi = 11.7; // permittivity constant of substrate 
+	parameter real 		epsrox = 3.9; // permittivity constant of insulator 	
+	parameter real 		Eg0 = 1.16964 from [0:inf); // Bandgap of substrate at 300K
+	
+	// pre-calculated parameter in paper
+	parameter real 		aa = 3.3661; // pre-calculated parameter aa 
+	parameter real 		bb = 0.9; // pre-calculated parameter bb 
+	parameter real 		ad = 0.5 from [0:inf); // pre-calculated parameter alphad 
+
+	// device profile
+	(* type="instance" *) 	parameter real L = 1.0E-6 from [0:inf); // Designed gate length
+	(* type="instance" *) 	parameter real TFIN = 15.0e-9 from [0:inf); // Fin thickness
+	(* type="instance" *) 	parameter real HFIN = 30.0e-9 from [0:inf); // Fin height
+	parameter real 		XL = 0.0; // L offset for channel length due to mask/etch effect
+	parameter real 		deltaL = 0.0; // deltaL
+
+	// other parameter 
+	parameter real 		U0 = 1417.0E-4 from [0:inf); // low field mobility
+	parameter real		mexp = 4.0 from [0:inf);
+	parameter real 		VSAT = 150.0E+3 from [0:inf); // saturation velocity in high e-field
+
+	// *********************************************************************************
+	// edit part
+	parameter integer 	GEOMOD = 3 from [0:4]; 		// MOSFET structure model
+	parameter integer 	VDSMOD = 0 from [0:1]; 		// Vdsat choice model (solve!) 
+	parameter integer 	IDSMOD = 1 from [0:1]; 		// Current calculation model (solve!)
+
+	parameter real 		Nbody = 1.0e+24 from [0:inf); 	// [/m3] Channel (body) doping
+	parameter real 		Tox = 1.0e-9 from [0:inf); 	// [m] Equivalent oxide thickness
+	parameter real 		Rsi = 10.0e-9 from [0:inf); 	// [m] Substrate radius for cylindrical gate MOSFET
+	parameter real 		aeL = 0.379809 from [0:inf);	// lower part of alphae 
+	// *********************************************************************************
+	
+	// local parameter
+	integer iter; 
+	real Temp;
+	real devsign; 
+	real mt, mn, mh, aff, ni, Nc, Nv;
+	real Eg, MS, semi, deltaPHI, Ec_Ef;
+	real Vgs;
+	real Vds;
+	real Ids;
+	real Vgsfb, Vgsfbeff, Vdsat, Vdseff;
+	real Psis, Esat, EsatL;	
+	real Lg, Leff, Weff;
+	real epssi, epsox, Rox, cox;
+	real Cins, cins; 
+	real Vt;
+	real Vfb, Vch; 
+	real Ach, Pch; 
+	real Qdtd, Qd, Nd; 
+	real Nes, Qes, Qestd, qis; 
+	real Ned, Qed, Qedtd, qid; 
+	real aeH, ae;
+	real aeH_s, ae_s, dae_dNes;
+	real aeH_d, ae_d, dae_dNed;
+	real Ned_i, Ned_ii, Vch_i;
+	real aeH_d_i, ae_d_i, dae_dNed_i;
+	real Res, Jaco, update;
+	real u0;
+	real coeff;
+	real qia, dqi, qbs, rc, q0, eta_iv, Ids0_ov_dqi, Ids0;
+	real Ngstep; 
+	integer ramp;
+	analog begin
+	// Type 
+      	if ( TYPE == `ntype ) begin
+        	devsign = 1;
+      	end else begin
+        	devsign = -1;
+      	end
+	// Temperature (K)
+	Temp = `temp + `constCtoK;
+
+	// Port voltage
+	Vgs = V(g,s); 
+	Vds = V(d,s);
+
+	// parameter pre-calculation
+	Vt 	= `kB*Temp/`q;
+	Eg 	= Eg0 - (4.73e-4)*pow(Temp,2)/(Temp+636.0); // Bandgap 
+	aff 	= aff0 + (4.73e-4)*pow(Temp,2)/(2.0*(Temp+636.0)); // electron affinity 
+	mt 	= 0.1905*(Eg0/Eg);
+	mn 	= `m0*pow((pow((6.0*mt),2.0)*ml),`one_ov_3);
+	mh 	= `m0*pow(((0.443587+0.003609528*Temp+0.0001173515*pow(Temp,2)+1.263218e-6*pow(Temp,3)+3.025581e-9*pow(Temp,4))
+			/(1+0.004683382*Temp+0.0002286895*pow(Temp,2)+7.469271e-7*pow(Temp,3)+1.727481e-9*pow(Temp,4))),`two_ov_3);
+	Nc 	= NC0*pow((mn/`m0)*(Temp/300.0),1.50);
+	Nv  	= NC0*pow((mh/`m0)*(Temp/300.0),1.50);
+	ni 	= $sqrt(Nc*Nv)*exp(-Eg/2.0/Vt);
+	Ec_Ef 	= -Vt * $ln(ni/Nc);
+	semi 	= aff + Ec_Ef; 
+	MS 	= metal - semi;
+	Vfb 	= MS;
+	epssi 	= `eps0 * epsrsi;
+	epsox 	= `eps0 * epsrox;
+	u0 	= U0;
+
+	case (GEOMOD)
+		0: begin // double gate 
+			Pch 	= 2.0 * HFIN; 
+			Ach 	= HFIN * TFIN; 
+			Cins 	= Pch * epsox / Tox; 
+			cins	= Cins / Pch; 
+		end
+
+		1: begin // triple gate 
+			Pch 	= 2.0 * HFIN + TFIN; 
+			Ach 	= HFIN * TFIN; 
+			Cins 	= Pch * epsox / Tox; 
+			cins	= Cins / Pch; 
+		end
+
+		2: begin // quadruple gate
+			Pch 	= 2.0 * (HFIN + TFIN); 
+			Ach 	= HFIN * TFIN; 
+			Cins 	= Pch * epsox / Tox; 
+			cins	= Cins / Pch; 
+		end
+			
+		3: begin // cylindrical gate 
+			Rox 	= Rsi + Tox; // Radius of oxide layer
+			Pch 	= 2.0 * `pi * Rsi; // Perimeter of channel
+			Ach 	= `pi * Rsi * Rsi; // Area of channel 
+			Cins 	= 2.0 * `pi * epsox / $ln(1.0 + Tox/Rsi); // capacitor
+			cins	= Cins / Pch; // average Cins : <Cins>s
+		end
+
+		4: begin // arbitary gate cross-section  
+		end 
+	endcase
+
+	// Qdep .
+	Nd 	= Nbody * Ach;
+	Qd 	= -`q * Nd; // depletion charge
+	Qdtd 	= Qd / Pch; // Qd tilde 
+
+	// effective channel length and width 
+	Lg 	= L + XL;
+	Leff 	= Lg - 2.0 * deltaL;
+	Weff 	= Pch;
+	
+	// Coefficient for calculation 
+	coeff 	= epssi*pow(Pch,2)*Vt*ni*`q;
+
+	// Source side compact charge core model
+	Nes = 1.0;
+	Vch = 0.0;
+
+	for (iter = 1; iter <= 50; iter = iter + 1) begin	
+		Res 	= 0.0;
+		Jaco 	= 0.0;
+			
+        	aeH_s 	= aa*pow((Ach*`q*Nes/(Pch*Pch*epssi*Vt)),-bb);
+        	ae_s 	= (aeL*aeH_s)/(aeL+aeH_s);
+        	dae_dNes = -(((pow(aeL,2)*aa*bb*Ach*`q)/(pow(Pch,2)*epssi*Vt))*pow(((Ach*`q*Nes)/(pow(Pch,2)*epssi*Vt)),-bb-1) 
+                       	  / pow((aeL + aa*pow(((Ach*`q*Nes)/(pow(Pch,2)*epssi*Vt)),-bb)),2));
+		Res 	= Vgs - Vfb - Vch -`q*Nd/(Cins) - `q*Nes/(Cins) 
+			- Vt*$ln((0.5*pow(`q,2)*pow(Nes,2) + (1.0-ae_s)*pow(`q,2)*Nes*Nd)/coeff + Nes/(Ach*ni));
+		Jaco 	= - `q/(Cins)
+			- Vt*((pow(`q,2)*Nes+(1.0-ae_s)*pow(`q,2)*Nd-dae_dNes*pow(`q,2)*Nes*Nd)/coeff + 1.0/(Ach*ni)) 
+			/((0.5*pow(`q,2)*pow(Nes,2) + (1.0-ae_s)*pow(`q,2)*Nes*Nd)/coeff + Nes/(Ach*ni));
+		update 	= - Res/Jaco;
+		Nes 	= Nes + update;
+	end
+
+	Qes	= `q*Nes; //C/m^2
+	Qestd 	= `q*Nes/Pch/1e4; //C/cm^2
+	qis 	= `q*Nes/Cins;
+
+	case (VDSMOD) // Drain saturation voltage mode 
+		0: begin // no Vdssat 
+			      Vdseff 	= Vds;
+		end
+			
+		1: begin // yes Vdssat 
+			      Vgsfb 	= Vgs - Vfb; // Vgs Clamping for Inversion Region Calculation in Accumulation
+        		Psis 	= Vgsfb - qis;
+        		Esat 	= (2.0*VSAT) / u0;
+        		EsatL 	= Esat * Leff;
+        		Vdsat 	= (EsatL*(Vgsfb - Psis + 2.0*Vt)) / (EsatL + (Vgsfb - Psis + 2.0*Vt));
+            Vdseff 	= Vds/pow((1.0+pow((Vds/Vdsat),mexp)),(1.0/mexp));
+			      Vdseff 	= min(Vds, Vdseff);
+		end
+	endcase
+
+	// Drain side compact charge core model 
+
+	if (VDSMOD == 0) begin 
+
+		for (ramp = 1; ramp <= 100; ramp = ramp + 1) begin
+
+			Vch_i = Vds/100*(ramp-1);
+
+			if (ramp == 1) begin 
+				Ned_i = 1.0;
+			end else if (ramp > 1) begin 
+				Ned_i = Ned_ii;
+			end
+
+			for (iter = 1; iter <= 50; iter = iter + 1) begin
+				Res 	= 0.0;
+				Jaco 	= 0.0;
+
+				aeH_d_i 	= aa*pow((Ach*`q*Ned_i/(Pch*Pch*epssi*Vt)),-bb);
+				ae_d_i 		= (aeL*aeH_d_i)/(aeL+aeH_d_i);
+				dae_dNed_i 	= -(((pow(aeL,2)*aa*bb*Ach*`q)/(pow(Pch,2)*epssi*Vt))*pow(((Ach*`q*Ned_i)/(pow(Pch,2)*epssi*Vt)),-bb-1)
+							/ pow((aeL + aa*pow(((Ach*`q*Ned_i)/(pow(Pch,2)*epssi*Vt)),-bb)),2));
+				Res 	= Vgs - Vfb - Vch_i -`q*Nd/(Cins) - `q*Ned_i/(Cins) 
+					- Vt*$ln((0.5*pow(`q,2)*pow(Ned_i,2) + (1.0-ae_d_i)*pow(`q,2)*Ned_i*Nd)/coeff + Ned_i/(Ach*ni));
+				Jaco 	= - `q/(Cins) 
+					- Vt*((pow(`q,2)*Ned_i+(1.0-ae_d_i)*pow(`q,2)*Nd-dae_dNed_i*pow(`q,2)*Ned_i*Nd)/coeff + 1.0/(Ach*ni)) 
+					/((0.5*pow(`q,2)*pow(Ned_i,2) + (1.0-ae_d_i)*pow(`q,2)*Ned_i*Nd)/coeff + Ned_i/(Ach*ni));
+				update 	= - Res/Jaco;
+				Ned_i 	= Ned_i + update;
+			end
+			Ned_ii = Ned_i;
+
+			// $display("Vch_i %0.2f Ned_i %e", Vch_i, Ned_i);
+		end 
+
+		Ned = Ned_i;
+		Vch = Vds;
+
+	end else if (VDSMOD == 1) begin 
+		Ned = 1.0;
+		Vch = Vdseff;
+	end 
+
+	for (iter = 1; iter <= 50; iter = iter + 1) begin
+		Res 	= 0.0;
+		Jaco 	= 0.0;
+
+    aeH_d 	= aa*pow((Ach*`q*Ned/(Pch*Pch*epssi*Vt)),-bb);
+    ae_d 	= (aeL*aeH_d)/(aeL+aeH_d);
+    dae_dNed = -(((pow(aeL,2)*aa*bb*Ach*`q)/(pow(Pch,2)*epssi*Vt))*pow(((Ach*`q*Ned)/(pow(Pch,2)*epssi*Vt)),-bb-1)
+                       	  / pow((aeL + aa*pow(((Ach*`q*Ned)/(pow(Pch,2)*epssi*Vt)),-bb)),2));
+		Res 	= Vgs - Vfb - Vch -`q*Nd/(Cins) - `q*Ned/(Cins) 
+			- Vt*$ln((0.5*pow(`q,2)*pow(Ned,2) + (1.0-ae_d)*pow(`q,2)*Ned*Nd)/coeff + Ned/(Ach*ni));
+		Jaco 	= - `q/(Cins) 
+			- Vt*((pow(`q,2)*Ned+(1.0-ae_d)*pow(`q,2)*Nd-dae_dNed*pow(`q,2)*Ned*Nd)/coeff + 1.0/(Ach*ni)) 
+			/((0.5*pow(`q,2)*pow(Ned,2) + (1.0-ae_d)*pow(`q,2)*Ned*Nd)/coeff + Ned/(Ach*ni));
+		update 	= - Res/Jaco;
+		Ned 	= Ned + update;
+	end
+	
+	Qed	= `q*Ned; //C/m^2
+	Qedtd 	= `q*Ned/Pch/1e4; //C/cm^2
+	qid 	= `q*Ned/Cins;	
+
+	case (IDSMOD) // Drain calculation mode choice 
+		0: begin // BSIM method 
+			qia 		    = (qis + qid)/2.0; 
+			dqi 		    = (qis - qid);
+			qbs 		    = `q * Nbody * Ach / Cins;
+			rc 		      = 2.0 * Cins * Ach / (epssi * pow(Pch,2));
+			q0		      = 10.0 * Vt / rc + 2.0 * qbs;
+			eta_iv		  = q0 / (q0 + qia);
+			Ids0_ov_dqi	= qia + (2.0 - eta_iv) * Vt;
+			Ids0		    = Ids0_ov_dqi * dqi;	
+			Ids 		    = Weff / Leff * u0 * cins * Ids0;
+		end
+			
+		1: begin // In-house method 
+     			Ids = `q*u0/Leff*((-`q*pow(Ned,2)/(2*Cins) - 2.0*Vt*(Ned - ((4.0*`pi*epssi*Vt + (1.0-ae_d)*`q*Nd)*$ln(abs(`q*Ned + 8.0*`pi*epssi*Vt + 2.0*(1.0-ae_d)*`q*Nd)))/`q)) 
+             -(-`q*pow(Nes,2)/(2*Cins) - 2.0*Vt*(Nes - ((4.0*`pi*epssi*Vt + (1.0-ae_s)*`q*Nd)*$ln(abs(`q*Nes + 8.0*`pi*epssi*Vt + 2.0*(1.0-ae_s)*`q*Nd)))/`q)));
+		end
+	endcase
+
+	I(d,s) <+ Ids; 
+
+	//$display("\n");	
+	//$display("\n");
+	//$display("Source Vgs %0.2f Nes %e Qes %e", Vgs, Nes, Qes);	
+	//$display("\n");
+	//$display("Drain Vgs %0.2f Ned %e Qed %e", Vgs, Ned, Qed);
+
+	end
+
+endmodule
