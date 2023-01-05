@@ -198,17 +198,17 @@ module IH_GAAFET (d, g, s, b);
 
 	case (VDSMOD) // Drain saturation voltage mode 
 		0: begin // no Vdssat 
-			      Vdseff 	= Vds;
+			Vdseff 	= Vds;
 		end
 			
 		1: begin // yes Vdssat 
-			      Vgsfb 	= Vgs - Vfb; // Vgs Clamping for Inversion Region Calculation in Accumulation
+			Vgsfb 	= Vgs - Vfb; // Vgs Clamping for Inversion Region Calculation in Accumulation
         		Psis 	= Vgsfb - qis;
         		Esat 	= (2.0*VSAT) / u0;
         		EsatL 	= Esat * Leff;
         		Vdsat 	= (EsatL*(Vgsfb - Psis + 2.0*Vt)) / (EsatL + (Vgsfb - Psis + 2.0*Vt));
-            Vdseff 	= Vds/pow((1.0+pow((Vds/Vdsat),mexp)),(1.0/mexp));
-			      Vdseff 	= min(Vds, Vdseff);
+            		Vdseff 	= Vds/pow((1.0+pow((Vds/Vdsat),mexp)),(1.0/mexp));
+			Vdseff 	= min(Vds, Vdseff);
 		end
 	endcase
 
@@ -259,9 +259,9 @@ module IH_GAAFET (d, g, s, b);
 		Res 	= 0.0;
 		Jaco 	= 0.0;
 
-    aeH_d 	= aa*pow((Ach*`q*Ned/(Pch*Pch*epssi*Vt)),-bb);
-    ae_d 	= (aeL*aeH_d)/(aeL+aeH_d);
-    dae_dNed = -(((pow(aeL,2)*aa*bb*Ach*`q)/(pow(Pch,2)*epssi*Vt))*pow(((Ach*`q*Ned)/(pow(Pch,2)*epssi*Vt)),-bb-1)
+    		aeH_d 	= aa*pow((Ach*`q*Ned/(Pch*Pch*epssi*Vt)),-bb);
+    		ae_d 	= (aeL*aeH_d)/(aeL+aeH_d);
+    		dae_dNed = -(((pow(aeL,2)*aa*bb*Ach*`q)/(pow(Pch,2)*epssi*Vt))*pow(((Ach*`q*Ned)/(pow(Pch,2)*epssi*Vt)),-bb-1)
                        	  / pow((aeL + aa*pow(((Ach*`q*Ned)/(pow(Pch,2)*epssi*Vt)),-bb)),2));
 		Res 	= Vgs - Vfb - Vch -`q*Nd/(Cins) - `q*Ned/(Cins) 
 			- Vt*$ln((0.5*pow(`q,2)*pow(Ned,2) + (1.0-ae_d)*pow(`q,2)*Ned*Nd)/coeff + Ned/(Ach*ni));
