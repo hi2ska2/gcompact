@@ -1,0 +1,19 @@
+// Model type
+`define ntype	1
+`define ptype	0
+ 
+// Numerical Constants
+`define constCtoK       273.15
+`define one_ov_3 	0.333333333
+`define two_ov_3 	0.666666667
+`define four_ov_3	1.333333333	
+
+// Physical Constants
+`define	q 	1.60219e-19
+`define eps0	8.854187817e-12
+`define kB 	1.380662e-23
+`define temp 	27
+`define h 	6.626176e-34
+`define m0 	9.109534e-31
+`define pi 	3.141592653589793
+`define hbar 	`h/`pi
