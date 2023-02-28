@@ -22,7 +22,7 @@ module gcompact (d, g, s, b);
 	parameter integer DEVTYPE = `ntype from [0:1]; // MOSFET type 
 
 	// instance & model parameter
-	parameter real       metal      = 4.50 from [0:inf); // Gate workfunction
+	parameter real       metal      = 4.30 from [0:inf); // Gate workfunction
 	parameter real       Eg0    	= 1.16964 from [0:inf); // Bandgap of substrate at 300K
 	parameter real       aff0	= 4.05 from [0:inf); // Electron affinity of substrate
 	parameter real       NC0    	= 2.5094E+25 from [0:inf); // electron concentration in conduction band 
@@ -44,8 +44,6 @@ module gcompact (d, g, s, b);
 	// mobility parameter 
 	parameter real       Un0    	= 1417.0E-4 from [0:inf);// low field electron mobility
 	parameter real       Up0    	= 470.5E-4 from [0:inf); // low field mobility
-	parameter real       mexp   	= 4.0 from [0:inf); 	 // Smoothing function factor for Vdsat
-	parameter real       vsat   	= 100.0E+3 from [0:inf); // saturation velocity in high e-field   
 	// *********************************************************************************
 	// edit part
 	parameter integer	GEOMOD  = 2 from [0:4]; // MOSFET Fin shape.   
@@ -57,8 +55,8 @@ module gcompact (d, g, s, b);
 	parameter real	Nes_i   = 1.0e-24 from [0:inf);
 	parameter real	Ned_i   = Nes_i from [0:inf); 
 
-	parameter real	LSD     = 40.0e-9 from [0:inf); 
-	parameter real	L       = 20.0e-9 from [0:inf); 
+	parameter real	LSD     = 5.0e-9 from [0:inf); 
+	parameter real	L       = 1000.0e-9 from [0:inf); 
 	parameter real	WFIN    = 36.0e-9 from [0:inf); 
 	parameter real	HFIN    = 9.0e-9 from [0:inf);       
 	parameter real	Tox     = 1.0e-9 from [0:inf); 
@@ -66,20 +64,28 @@ module gcompact (d, g, s, b);
 	parameter real	R       = 0.0e-9 from [0:inf); // [m] Channel radius [GEOMOD = 3]
 	parameter real	r       = 0.0e-9 from [0:inf); // [m] Rounded-corner radius [GEOMOD = 4] 
 
-	parameter real	beta2   = 1.00049033689586 from [0:inf);
 	parameter real	alphaeL = 0.499001684232087 from [0:inf);
+	parameter real	beta2   = 1.00049033689586 from [0:inf);
 	parameter real	Cg      = 3.17199789621433E-09 from [0:inf);
 	parameter real	offset  = -0.0000137768481862366 from (-inf:inf);
 
 	parameter real	etaXL   = 0.0 from [0:inf);
 	parameter real	etasL   = 0.0 from [0:inf);
 
-	parameter real	VE	= 0.1 from [0:inf);
+	parameter real  mexp   	= 4.0 from [0:inf); 	 // Smoothing function factor for Vdsat
+	parameter real	VE	= 0.18 from [0:inf);
+	parameter real  vsat   	= 107.0E+3 from [0:inf); // saturation electron velocity in high e-field   
+	//parameter real vsatp	= 83.7E+3 from [0:inf); // saturation hole velocity in high e-field
+	//parameter real vsatnexp	= 0.87 from [0:inf); // saturation electron velocity exponential term  
+	//parameter real vsatpexp	= 0.52 from [0:inf); // saturation hole velocity exponential term
+	//parameter real beta0n	= 1.109 from [0:inf); // electron velocity beta0 term  
+	//parameter real beta0p	= 1.213 from [0:inf); // hole velocity beta0 term 
+	//parameter real beta0nexp	= 0.66 from [0:inf); // electron velocity beta0 exponontial term  
+	//parameter real beta0pexp	= 0.17 from [0:inf); // hole velocity beta0 exponential term 	
 	// *********************************************************************************
-	// parameter for SHORT CHANNEL EFFECT [SCEMOD==1]
+	// parameter for SHORT CHANNEL EFFECT [SCEMOD==1] ref. BSIM-CMG
 	parameter real	ETA0 = 1.0 from [0:inf); // DIBL coefficient
 	parameter real	DSUB = 1.06 from [0:inf); // DIBL exponent coefficient 
-
 	parameter real	DVT0 = 1.0 from [0:inf); // SCE coefficient
 	parameter real	DVT1 = 0.6 from (0:inf); // SCE exponent coefficient. After binning it should be within (0 : inf)
 	parameter real 	DVT1SS = DVT1 from (0:inf); 
@@ -108,7 +114,7 @@ module gcompact (d, g, s, b);
 	real Vds, Vdsx, Vdsi, Vdisi;
 	real Vbs; 
 	real Ids, IDS;
-	real Vgsms, Vgsmseff, Vdsat, Vdseff;
+	real Vgsms, Vgsmseff;
 	real Vssi, Vddi;
 	real VTH0, VTH;
 	real Em, Esat, EsatL, inv_mexp;   
@@ -129,8 +135,8 @@ module gcompact (d, g, s, b);
 	real Res, Jaco, update;
 	real un0, up0;
 	real coef;
-	real A, Lambda, LambdaHFIN, Lambdaeff, theta_Leff; 
-	real VsL, Vsmin, y0, ymc, Z0, ZL;
+	real A, Lambda, HFINeff, Lambdaeff, theta_Leff; 
+	real dVgs, VsL, Vsmin, y0, ymc, Z0, ZL, Psicmin;
 	real tmp, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10;
 	real Q0, U, X, Y, Z;
 	real bn; 
@@ -141,6 +147,7 @@ module gcompact (d, g, s, b);
 	real Theta_SW, Theta_SCE, Theta_DIBL, Theta_DITS;
 	real dvth_vtroll, dvth_dibl, dvth_all;
 	real Rs, Rd;
+	real Ldi, Vdsat, Vdsat2, Vdseff;
 
 	analog begin
 	// Type 
@@ -164,7 +171,7 @@ module gcompact (d, g, s, b);
 	ni    = $sqrt(Nc*Nv) * exp(-Eg/2.0/Vt);
 	Ec_Ef = -Vt * ln(ni/Nc);
 	semi  = aff + Ec_Ef; 
-	MS   = metal - semi;
+	MS	= metal - semi;
 	epssi = `eps0 * epsrsi;
 	epsox = `eps0 * epsrox;
 	epsratio = epssi / epsox; 
@@ -205,9 +212,9 @@ module gcompact (d, g, s, b);
 		Pch	= 2.0*`pi*R + 2.0*(HFIN-2.0*R) + 2.0*(WFIN-2.0*R);
 		Ach	= `pi*pow(R,2) + HFIN*WFIN - 2.0*R*(HFIN+WFIN);
 		Cins	= (5/2*epsox) / (ln(1.0 + (5.0*Tox) / (4.0*WFIN))) 
-			+ (5/2*epsox) / (ln(1.0 + (5.0*Tox) / (4.0*HFIN))) 
-			- (5/2*epsox) / (ln(1.0 + (5.0*Tox) / (4.0*(WFIN-2.0*r)))) 
-			- (5/2*epsox) / (ln(1.0 + (5.0*Tox) / (4.0*(HFIN-2.0*r))));      
+			+ (2.5*epsox) / (ln(1.0 + (5.0*Tox) / (4.0*HFIN))) 
+			- (2.5*epsox) / (ln(1.0 + (5.0*Tox) / (4.0*(WFIN-2.0*r)))) 
+			- (2.5*epsox) / (ln(1.0 + (5.0*Tox) / (4.0*(HFIN-2.0*r))));      
 	end 
 	endcase
 
@@ -230,7 +237,7 @@ module gcompact (d, g, s, b);
 	Vgsi  = V(g,si);
 	Vdsi  = V(d,si);
 
-	// fitting equation considered Quantum confinement Effect
+	// Fitting equation considered Quantum confinement Effect
 	Q0	= Pch * Pch / Ach * epssi * Vt;
 	Y	= 2.0 - 16.0 * Ach / pow(Pch,2);
 	Z	= Ach / Pch / 1e-9;
@@ -245,57 +252,40 @@ module gcompact (d, g, s, b);
 	inv_mexp = 1.0 / mexp;
 
 	// potential parameter
-	phin	= 0.0;
+	phin	= 0.0; // non-uniform lateral doping 
 	phib	= Vt * ln(Nbody/ni); 
 	phist	= 0.4 + phib + phin;
 	Vbi	= Vt * ln(NSD*Nbody/pow(ni,2));
 
 	// characteristic length 
 	Lambda	= sqrt((epssi*Ach/Cins) * (1.0 + (Ach*Cins)/(2.0*epssi*Pch*Pch)));
-	if (GEOMOD == 3) begin 
-		Lambdaeff	= Lambda; 
-	end else begin 
-		LambdaHFIN	= sqrt(epsratio/4.0*(1.0+WFIN/(2.0*epsratio*Tox))*HFIN*Tox);
-		Lambdaeff	= 1.0 / sqrt(pow((1.0/Lambda),2) + pow((A/LambdaHFIN),2));
-	end 
+	//if (GEOMOD == 3) begin 
+	//	Lambdaeff	= Lambda; 
+	//end else if (GEOMOD == 1 || GEOMOD == 2)begin // effective Lambda for GEOMOD==1||2
+	//	HFINeff	= sqrt(epsratio/4.0*(1.0+WFIN/(2.0*epsratio*Tox))*HFIN*Tox);
+	//	Lambdaeff	= A / sqrt(1.0/(epsratio/2.0*(1+TFIN/(4.0*epsratio*Tox))*TFIN*Tox)+1.0/(4.0*HFINeff));
+	//end 
+	Lambdaeff = Lambda;
 
 	Vgsms = Vgs - MS;
 
-	if (SCEMOD == 1) begin
-		// Vth roll-off
-		tmp = DVT1 * Leff / Lambdaeff + 1.0e-6;
-        	if (tmp < 40.0) begin
-            		Theta_SCE = 0.5 / (cosh(tmp) - 1.0);
-        	end else begin
-            		Theta_SCE = exp(-tmp);
-        	end
+	// Effective gate voltage   
+	if (SCEMOD == 1) begin 
+		VsL	= Vgs - MS - (`q*Nbody/epssi)*pow(Lambdaeff,2);
+		Z0	= Vbi - VsL;
+		ZL	= Vbi - VsL + Vds;
 
-		dvth_vtroll = - DVT0 * Theta_SCE * (Vbi - phist);
-
-        	tmp = DVT1SS * Leff / Lambdaeff + 1.0e-6;
-        	if (tmp < 40.0) begin
-            		Theta_SW = 0.5 / (cosh(tmp) - 1.0);
-        	end else begin
-            		Theta_SW = exp(-tmp);
-        	end
-
-		// DIBL Vth shift
-        	tmp = DSUB * Leff / Lambdaeff + 1.0e-6;
-        	if (tmp < 40.0) begin
-            		Theta_DIBL = 0.5 / (cosh(tmp) - 1.0);
-        	end else begin
-            		Theta_DIBL = exp(-tmp);
-        	end
-
-		dvth_dibl = - ETA0 * Theta_DIBL * Vdsx;
-
-		// Total Vth shift
-		dvth_all = dvth_vtroll + dvth_dibl;
+		if (Z0<0.0 || ZL<0.0) begin  
+			dVgs = 0.0;
+		end else begin 
+			dVgs = - (pow(Vds,2)*exp(-Leff/(2.0*Lambdaeff))) / ((exp(Leff/Lambdaeff)-exp(-Leff/Lambdaeff))*sqrt(Z0*ZL)) 
+				+ 2.0 * sqrt(Z0*ZL) * sinh(Leff/(2.0*Lambdaeff)) / sinh(Leff/Lambdaeff);
+		end
 	end else begin 
-		dvth_all = 0.0;
+		dVgs = 0.0;	
 	end
 
-	Vgsms = Vgsms + dvth_all;
+	Vgsms = Vgsms + dVgs;
 
 	// Coefficient for calculating charge
 	coef = 2.0 * pow(Pch,2) * epssi * Vt * ni;
@@ -345,6 +335,16 @@ module gcompact (d, g, s, b);
 	Qes	= -`q * Nes;   //C/m^2
 	Qestd	= -`q * Nes / Pch / 1e4;   //C/cm^2
 	qes	= +`q * Nes / Cins;
+	
+	if (SCEMOD == 1) begin 
+		Esat = 2.0 * vsat / un0;
+		EsatL = Esat * Leff;
+		tmp = (qes + 2.0 * Vt);
+		Vdsat = EsatL * tmp / (EsatL + tmp);
+		Vdseff = Vds / pow((1.0+pow((Vds/Vdsat),mexp)),inv_mexp);
+		deltaL = Lambdaeff * ln( 1.0+(Vds-Vdseff)/VE );
+		Leff = Leff - deltaL; 
+	end 
 
 	// initial solution for calculation
 	Ned = Ned_i;
@@ -436,21 +436,14 @@ module gcompact (d, g, s, b);
 
 
 	$display("\n");
-	$display("Vssi %f", Vssi);
-	$display("Vch %f", Vch);
-	$display("dvth_all %e", dvth_all);
-	$display("Rs %f", Rs);
-	//$display("Vdsat : %f, Vdseff : %f", Vdsat, Vdseff);
-	//$display("\n");
-	//$display("VsL : %f", VsL);   
-	//$display("\n");
-	//$display("Psicm : %f", Psicm);   
-	//$display("\n");
-	//$display("dvth_all : %f", dvth_all);   
-	//$display("\n");
-	//$display("Source Vgs %0.2f Nes %e", Vgs, Nes);   
-	//$display("\n");
-	//$display("Drain Vgs %0.2f Ned %e", Vgs, Ned);
+	$display("Z0 %f ZL %f", Z0, ZL);
+	//$display("Vch %f", Vch);
+	$display("Vgs %f dVgs %e", Vgs, dVgs);
+	$display("deltaL %e", deltaL);
+	$display("Lambda %e Lambdaeff %e", Lambda, Lambdaeff);
+  	$display("Vdsat %f Vdseff %f", Vdsat, Vdseff);
+	$display("S Vgs %0.2f Nes %e", Vgs, Nes);   
+	$display("D Vgs %0.2f Ned %e", Vgs, Ned);
 
 	end
 
