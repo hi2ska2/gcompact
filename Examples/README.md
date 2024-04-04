@@ -1,1 +1,1 @@
-This folder contains examples using the G-Compact model.
+This folder contains examples using the gcompact model.
