@@ -12,6 +12,6 @@ Seong-Min Han, Kwang-Woon Lee, and Sung-Min Hong, "Development of in-house compa
 
 Sung-Min Hong (Project leader)
 
-Seong-Min Han
+Seong-Min Han (Initial contributor, 2023)
 
-Kwang-Woon Lee
+Kwang-Woon Lee (Model developer)
