@@ -8,6 +8,8 @@ Kwang-Woon Lee and Sung-Min Hong, "Derivation of a universal charge model for mu
 
 Seong-Min Han, Kwang-Woon Lee, and Sung-Min Hong, "Development of in-house compact model for multigate MOSFETs using the Verilog-A," Korean Conference on Semiconductor, 2023.
 
+Kwang-Woon Lee and Sung-Min Hong, "Quasi-1D model for bridging TCAD simulation and compact modeling of gate-all-around MOSFETs," International Compact Modeling Conference (ICMC), 2025.
+
 # List of developers
 
 Sung-Min Hong (Project leader)
